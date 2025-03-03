@@ -1,2 +1,2 @@
 from .tensor import Tensor
-from .nn import *
+from .operations import square, exp, add
