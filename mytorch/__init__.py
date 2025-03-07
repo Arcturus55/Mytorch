@@ -1,2 +1,2 @@
-from .tensor import Tensor
-from .operations import square, exp, add
+from .tensor import Tensor, square, exp, rand, randn, randint
+from .config import no_grad

@@ -1,12 +1,14 @@
 import numpy as np
 import mytorch
-from mytorch import *
 
-x = Tensor(np.array(2.0), requires_grad=True)
-a = square(x)
-y = add(square(a), square(a))
+x = mytorch.rand(size=(3, 2), requires_grad=True)
+
+y = x ** 3
+
+print(y)
+
 y.backward()
-print(y.data)
+
 print(x.grad)
 
 # import unittest
