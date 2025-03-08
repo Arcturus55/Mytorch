@@ -96,6 +96,9 @@ class Tensor:
     def T(self):
         return mytorch.nn.functional.transpose(self)
     
+    def sum(self, axis=None, keepdims=False):
+        return mytorch.nn.functional.sum(self, axis, keepdims)
+    
     def __len__(self):
         return len(self.data)
 
@@ -176,10 +179,15 @@ class Operation:
 class Add(Operation):
 
     def forward(self, x0, x1):
+        self.shape0, self.shape1 = x0.shape, x1.shape
         return x0 + x1
     
     def backward(self, gy):
-        return gy, gy
+        gx0, gx1 = gy, gy
+        if self.shape0 != self.shape1:
+            gx0 = mytorch.nn.functional.sum_to(gx0, self.shape0)
+            gx1 = mytorch.nn.functional.sum_to(gx1, self.shape1)
+        return gx0, gx1
     
 class Sub(Operation):
 
