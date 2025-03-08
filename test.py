@@ -1,14 +1,16 @@
 import numpy as np
 
 import mytorch
+from mytorch import Tensor
+import mytorch.nn.functional as F
 
-x = mytorch.rand(size=(3, 2), requires_grad=True)
+x = mytorch.randn(size=(3, 2, 5, 4))
 
-y = x ** 3
+y = x.transpose()
 
-print(y)
+print(y.shape)
 
 y.backward()
 
-print(x.grad)
+print(x.grad.shape)
 

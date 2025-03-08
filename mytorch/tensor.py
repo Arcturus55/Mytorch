@@ -2,22 +2,22 @@ import numpy as np
 from weakref import ref
 from queue import PriorityQueue
 
-from .config import Config
+import mytorch
+from .config import Config, using_config
+# from .nn.functional import reshape
 
 class Tensor:
 
-    def __init__(self, data: np.ndarray, requires_grad=False, name=None):
+    def __init__(self, data: np.ndarray, name=None):
 
         if not isinstance(data, np.ndarray):
             data = np.array(data)
 
         self.data = data
-        self.grad = Tensor(None) if requires_grad else None
+        self.grad = None
         self.name = name
         self.creator = None
         self.generation = 0
-
-        self.requires_grad = requires_grad
 
     __array_priority__ = 200
 
@@ -26,14 +26,11 @@ class Tensor:
         self.generation = func.generation + 1
 
     def cleargrad(self):
-        assert self.requires_grad, "Cannot apply cleargrad to a tensor which doesn't require grad."
-        
-        self.grad = Tensor(None)
+        self.grad = None
 
-    def backward(self, retain_grad=False):
-        assert self.requires_grad, "Cannot apply backward to a tensor which doesn't require grad."
+    def backward(self, retain_grad=False, create_graph=False):
 
-        if self.grad.data == None:
+        if self.grad == None:
             self.grad = Tensor(np.ones_like(self.data))
 
         funcs = PriorityQueue()
@@ -51,28 +48,25 @@ class Tensor:
             
             inputs, outputs = f.inputs, f.outputs
 
-            gys = [output().grad.data for output in outputs]
-            gxs = f.backward(*gys)
+            gys = [output().grad for output in outputs]
+            with using_config('enable_backprop', create_graph):
+                gxs = f.backward(*gys)
 
             if not isinstance(gxs, tuple):
                 gxs = (gxs, )
 
             for input, gx in zip(inputs, gxs):
-
-                if not input.requires_grad:
-                    continue
-
-                if input.grad.data == None:
-                    input.grad.data = gx
+                if input.grad is None:
+                    input.grad = gx
                 else:
-                    input.grad.data = input.grad.data + gx
+                    input.grad = input.grad + gx
 
                 if input.creator is not None:
                     add_func(input.creator)
 
             if not retain_grad:
                 for output in f.outputs:
-                    output().grad.data = None
+                    output().grad = None
 
     @property
     def shape(self):
@@ -90,6 +84,18 @@ class Tensor:
     def dtype(self):
         return self.data.dtype
     
+    def reshape(self, *shape):
+        if len(shape) == 1 and isinstance(shape[0], (tuple, list)):
+            shape = shape[0]
+        return mytorch.nn.functional.reshape(self, shape)
+    
+    def transpose(self, axes=None):
+        return mytorch.nn.functional.transpose(self, axes)
+    
+    @property
+    def T(self):
+        return mytorch.nn.functional.transpose(self)
+    
     def __len__(self):
         return len(self.data)
 
@@ -97,7 +103,7 @@ class Tensor:
         if self.data is None:
             return "tensor(None)"
         p = str(self.data).replace('\n', '\n' + ' '*7)
-        return 'tensor(' + p + ', dtype=' + str(self.dtype) + (', requires_grad=True' if self.requires_grad else '') + ')'
+        return 'tensor(' + p + ', dtype=' + str(self.dtype) + ')'
 
     def __eq__(self, other):
         return self.data == other.data
@@ -139,16 +145,10 @@ class Operation:
         xs = [input.data for input in inputs]
         ys = self.forward(*xs)
 
-        requires_grad = False
-        for input in inputs:
-            if input.requires_grad:
-                requires_grad = True
-                break
-        
         if not isinstance(ys, tuple):
             ys = (ys, )
         
-        outputs = [Tensor(y, requires_grad=requires_grad) for y in ys]
+        outputs = [Tensor(y) for y in ys]
 
         if Config.enable_backprop:
             self.generation = max([input.generation for input in inputs])
@@ -195,7 +195,7 @@ class Mul(Operation):
         return x0 * x1
     
     def backward(self, gy):
-        x0, x1 = self.inputs[0].data, self.inputs[1].data
+        x0, x1 = self.inputs
         return x1 * gy, x0 * gy
     
 class Div(Operation):
@@ -204,7 +204,7 @@ class Div(Operation):
         return x0 / x1
     
     def backward(self, gy):
-        x0, x1 = self.inputs[0].data, self.inputs[1].data
+        x0, x1 = self.inputs
         return gy / x1, - (gy * x0) / (x1 ** 2)
     
 class Pow(Operation):
@@ -216,28 +216,10 @@ class Pow(Operation):
         return x ** self.c
     
     def backward(self, gy):
-        x = self.inputs[0].data
+        x = self.inputs[0]
         c = self.c
 
         return gy * c * x ** (c-1)
-
-class Square(Operation):
-
-    def forward(self, x):
-        return x ** 2
-    
-    def backward(self, gy):
-        x = self.inputs[0].data
-        return 2 * x * gy
-    
-class Exp(Operation):
-
-    def forward(self, x):
-        return np.exp(x)
-    
-    def backward(self, gy):
-        x = self.inputs[0].data
-        return np.exp(x) * gy
     
 class Neg(Operation):
 
@@ -261,12 +243,6 @@ def div(x0, x1):
 
 def pow(x, c):
     return Pow(c)(x) 
-    
-def square(x):
-    return Square()(x)
-
-def exp(x):
-    return Exp()(x)
 
 def neg(x):
     return Neg()(x)
@@ -276,11 +252,11 @@ def as_tensor(x):
         return x
     return Tensor(x)
 
-def rand(size, requires_grad=False, name=None):
-    return Tensor(np.random.rand(*size), requires_grad=requires_grad, name=name)
+def rand(size, name=None):
+    return Tensor(np.random.rand(*size), name=name)
 
-def randn(size, requires_grad=False, name=None):
-    return Tensor(np.random.randn(*size), requires_grad=requires_grad, name=name)
+def randn(size, name=None):
+    return Tensor(np.random.randn(*size), name=name)
 
-def randint(low, high=None, size=..., dtype=np.int64, requires_grad=False, name=None):
-    return Tensor(np.random.randint(low, high, size, dtype), requires_grad=requires_grad, name=name)
+def randint(low, high=None, size=..., dtype=np.int64, name=None):
+    return Tensor(np.random.randint(low, high, size, dtype), name=name)
