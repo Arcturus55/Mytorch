@@ -37,7 +37,7 @@ class Exp(Operation):
     
     def backward(self, gy):
         x = self.inputs[0]
-        return np.exp(x) * gy
+        return exp(x) * gy
     
 class Tanh(Operation):
 
@@ -120,7 +120,7 @@ class SumTo(Operation):
     def backward(self, gy):
         gx = broadcast_to(gy, self.old_shape)
         return gx
-    
+        
 def sin(x):
     return Sin()(x)
 

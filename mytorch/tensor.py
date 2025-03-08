@@ -141,6 +141,9 @@ class Tensor:
     def __pow__(self, exponent):
         return pow(self, exponent)
     
+    def __matmul__(self, other):
+        return matmul(self, other)
+    
 class Operation:
 
     def __call__(self, *inputs):
@@ -192,28 +195,45 @@ class Add(Operation):
 class Sub(Operation):
 
     def forward(self, x0, x1):
+        self.shape0, self.shape1 = x0.shape, x1.shape
         return x0 - x1
     
     def backward(self, gy):
-        return gy, -gy
+        gx0, gx1 = gy, -gy
+        if self.shape0 != self.shape1:
+            gx0 = mytorch.nn.functional.sum_to(gx0, self.shape0)
+            gx1 = mytorch.nn.functional.sum_to(gx1, self.shape1)
+        return gx0, gx1
     
 class Mul(Operation):
 
     def forward(self, x0, x1):
+        self.shape0, self.shape1 = x0.shape, x1.shape
         return x0 * x1
     
     def backward(self, gy):
         x0, x1 = self.inputs
-        return x1 * gy, x0 * gy
+        gx0 = x1 * gy
+        gx1 = x0 * gy
+        if self.shape0 != self.shape1:
+            gx0 = mytorch.nn.functional.sum_to(gx0, self.shape0)
+            gx1 = mytorch.nn.functional.sum_to(gx1, self.shape1)
+        return gx0, gx1
     
 class Div(Operation):
 
     def forward(self, x0, x1):
+        self.shape0, self.shape1 = x0.shape, x1.shape
         return x0 / x1
     
     def backward(self, gy):
         x0, x1 = self.inputs
-        return gy / x1, - (gy * x0) / (x1 ** 2)
+        gx0 = gy / x1
+        gx1 = -(gy * x0) / (x1 ** 2)
+        if self.shape0 != self.shape1:
+            gx0 = mytorch.nn.functional.sum_to(gx0, self.shape0)
+            gx1 = mytorch.nn.functional.sum_to(gx1, self.shape1)
+        return gx0, gx1
     
 class Pow(Operation):
 
@@ -236,6 +256,19 @@ class Neg(Operation):
     
     def backward(self, gy):
         return -gy
+    
+class MatMul(Operation):
+
+    def forward(self, x, W):
+        return x.dot(W)
+    
+    def backward(self, gy):
+        x, W = self.inputs
+        gx = matmul(gy, W.T)
+        gW = matmul(x.T, gy)
+
+        return gx, gW
+
         
 def add(x0, x1):
     return Add()(x0, x1)
@@ -254,6 +287,9 @@ def pow(x, c):
 
 def neg(x):
     return Neg()(x)
+
+def matmul(x, W):
+    return MatMul()(x, W)
 
 def as_tensor(x):
     if isinstance(x, Tensor):
