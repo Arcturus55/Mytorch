@@ -10,7 +10,9 @@ class Tensor:
 
     def __init__(self, data: np.ndarray, name=None):
 
-        if not isinstance(data, np.ndarray):
+        if isinstance(data, Tensor):
+            data = data.data
+        elif not isinstance(data, np.ndarray):
             data = np.array(data)
 
         self.data = data
@@ -25,7 +27,7 @@ class Tensor:
         self.creator = func
         self.generation = func.generation + 1
 
-    def cleargrad(self):
+    def clear_grad(self):
         self.grad = None
 
     def backward(self, retain_grad=False, create_graph=False):
@@ -295,6 +297,9 @@ def as_tensor(x):
     if isinstance(x, Tensor):
         return x
     return Tensor(x)
+
+def zeros(size, dtype=None, name=None):
+    return Tensor(np.zeros(size, dtype), name=name)
 
 def rand(size, name=None):
     return Tensor(np.random.rand(*size), name=name)
